@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <title>راديو مريم الناصرة -  جدول البث الإذاعي (RMN Clock)</title>
+  <link rel="icon" type="image/png" href="assets/images/radio-maria-mark.png">
+  
+  <!-- Google Fonts: Cairo -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Cairo', 'Segoe UI', 'Tahoma', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="css/styles.css?v=20261015-1">
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col selection:bg-amber-200">
+
+  <!-- ================= TOP HEADER / BRANDING ================= -->
+  <header class="marian-gradient text-white shadow-lg sticky top-0 z-40 no-print">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-4">
+      
+      <!-- Radio Maria Nazareth brand -->
+      <div class="flex items-center gap-3.5">
+        <img src="assets/images/radio-maria-mark.png" alt="شعار راديو مريم" class="station-mark" />
+        <div>
+          <img src="assets/images/radio-maria-wordmark.png" alt="راديو مريم الناصرة" class="station-wordmark" />
+        </div>
+      </div>
+
+      <!-- Undo / Redo & Print Quick Access -->
+      <div class="flex items-center gap-1.5">
+        <!-- Supabase Cloud Live Status Indicator (Only cloud emoji + status dot) -->
+        <button id="supabaseSyncBadge" onclick="window.rmnSupabase.showStatus()" title="المزامنة السحابية (Supabase)" class="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border border-white/10 shadow-2xs">
+          <span class="text-sm select-none leading-none">☁️</span>
+          <span id="supabaseStatusDot" class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
+        </button>
+
+        <button id="undoActionBtn" title="تراجع (Ctrl+Z)" class="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition flex items-center gap-1">
+          <span>↩</span> <span class="hidden sm:inline">تراجع</span>
+        </button>
+        <button id="redoActionBtn" title="إعادة (Ctrl+Y)" class="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition flex items-center gap-1">
+          <span>↪</span> <span class="hidden sm:inline">إعادة</span>
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Main Navigation Tabs Bar -->
+    <div class="bg-blue-950/80 border-t border-blue-900/60 px-4 sm:px-6">
+      <div class="max-w-7xl mx-auto flex items-center gap-2 overflow-x-auto py-2">
+        <button data-view="schedule" class="view-tab-btn px-5 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 bg-blue-800 text-white shadow-sm">
+          <span>📅</span> جدول البرامج (أسبوعي / يومي)
+        </button>
+        <button data-view="library" class="view-tab-btn px-5 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 text-slate-200 hover:bg-blue-900/50">
+          <span>📚</span> مكتبة البرامج
+        </button>
+        <button data-view="analytics" class="view-tab-btn px-5 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 text-slate-200 hover:bg-blue-900/50">
+          <span>📊</span> إحصائيات
+        </button>
+        <button data-view="settings" class="view-tab-btn px-5 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 text-slate-200 hover:bg-blue-900/50">
+          <span>⚙️</span> الإعدادات
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= SUB-HEADER ACTION BAR ================= -->
+  <section id="actionBar" class="bg-white border-b border-slate-200 px-4 sm:px-6 py-2.5 shadow-2xs no-print">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+      
+      <!-- Smart Automation Group -->
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-xs font-bold text-slate-500 hidden sm:inline">أدوات البناء الذكي:</span>
+        
+        <button id="applyBlueprintBtn" title="تعبئة القداس الإلهي، أسرار الوردية، وصلاة التبشير والغروب" class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold border border-blue-200 flex items-center gap-1.5 transition">
+          <span>⚡</span> تعبئة الصلوات والقداس الثابت
+        </button>
+
+        <button id="fillGapsBtn" title="ملء الخانات الشاغرة بترانيم وفواصل المحطة" class="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl text-xs font-bold border border-amber-200 flex items-center gap-1.5 transition">
+          <span>🪄</span> تعبئة الفراغات
+        </button>
+
+        <button id="openTemplatesBtn" title="حفظ أو تحميل قوالب أسابيع إذاعية جاهزة" class="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold border border-indigo-200 flex items-center gap-1.5 transition">
+          <span>📚</span> الجداول المحفوظة
+        </button>
+
+      </div>
+
+      <!-- Export & Storage Group -->
+      <div class="flex items-center gap-2">
+        <button id="shareScheduleBtn" onclick="window.rmnUI.openShareModal()" title="مشاركة وتصدير جدول البث" class="px-3.5 py-1.5 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-bold border border-blue-600 flex items-center gap-1.5 shadow-2xs transition">
+          <span>📤</span> <span>مشاركة</span>
+        </button>
+
+        <button id="exportBackupBtn" title="حفظ نسخة احتياطية من كافة البيانات" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">
+          <span>💾</span> حفظ نسخة
+        </button>
+
+        <button id="importBackupBtn" title="استرجاع نسخة محفوظة مسبقاً" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">
+          <span>📂</span> استرجاع
+        </button>
+        <input type="file" id="backupFileInput" accept=".json" class="hidden">
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ================= PRINT RUN-SHEET HEADER (PRINT ONLY - SHOWN AT TOP OF PRINTED DOCUMENT) ================= -->
+  <div class="print-only p-4 border-b-2 border-black mb-4 bg-white">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-xl font-black text-black">راديو مريم الناصرة - أثير البشارة</h1>
+        <p class="text-xs text-gray-700 font-bold">جدول البث الإذاعي الأسبوعي الرسمي - استوديو الناصرة</p>
+        <div class="text-xs font-bold text-blue-900 mt-1">الجدول: <span id="printScheduleName" class="font-black text-black">الجدول الحالي</span></div>
+      </div>
+      <div class="text-left text-xs text-gray-600 font-mono">
+        <div>تاريخ الطباعة: <span id="printDate"></span></div>
+        <div>نظام البث: 24 ساعة / 5 دقائق</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MAIN CONTENT VIEW CONTAINER ================= -->
+  <main class="flex-1 max-w-none w-full mx-auto p-3 sm:p-4" id="viewContainer">
+
+    <!-- 1. SCHEDULE VIEW PANEL (CONTAINS BOTH WEEKLY & DAILY VIEWS WITH A TOGGLE) -->
+    <div id="scheduleViewPanel" class="view-panel space-y-4">
+      
+      <!-- Top Schedule View Switcher Controls -->
+      <div id="scheduleControlsBar" class="bg-white/95 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-4 no-print transition-all">
+        <!-- View Toggle Buttons (Weekly vs Daily) -->
+        <div class="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+          <button id="subViewWeeklyBtn" class="px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition flex items-center gap-2 bg-blue-700 text-white shadow-xs">
+            <span>📅</span> العرض الأسبوعي
+          </button>
+          <button id="subViewDailyBtn" class="px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition flex items-center gap-2 text-slate-700 hover:bg-slate-200">
+            <span>📆</span> عرض اليوم
+          </button>
+        </div>
+
+        <div id="activeScheduleName" class="min-w-[180px] max-w-[100ch] truncate px-4 py-2 text-xs sm:text-sm font-extrabold text-blue-900 bg-blue-50/90 rounded-xl border border-blue-200 shadow-2xs text-center sm:text-right" title="اسم الجدول النشط (حتى 100 حرف)">الجدول الحالي</div>
+
+        <!-- Time-scale controls -->
+        <div id="weeklyControlsGroup" class="flex items-center gap-2">
+          <span class="text-xs text-slate-500 font-semibold hidden md:inline">مقياس الوقت:</span>
+          <select id="timeZoomSelect" class="bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 cursor-pointer">
+            <option value="5">5 دقائق (12 خانة / ساعة)</option>
+            <option value="10">10 دقائق (6 خانات / ساعة)</option>
+            <option value="15" selected>15 دقيقة (4 خانات / ساعة)</option>
+            <option value="30">30 دقيقة (خانتان / ساعة)</option>
+            <option value="60">60 دقيقة (خانة واحدة / ساعة)</option>
+          </select>
+        </div>
+
+        <!-- Daily Specific Controls (Day Switcher Tabs & Free Time Insert) -->
+        <div id="dailyControlsGroup" class="hidden flex-wrap items-center gap-3">
+          <div class="flex items-center gap-1.5 overflow-x-auto" id="dailyDayTabs">
+            <!-- Rendered by UI -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Google Calendar Style Hint / Notification -->
+      <!-- Schedule Content Container -->
+      <div id="scheduleMainContent">
+        <!-- Rendered by UI: Weekly grid or Daily list -->
+      </div>
+
+    </div>
+
+    <!-- 2. LIBRARY VIEW PANEL (SEARCH ONLY AND + ADD BUTTON, NO CATEGORY FILTER) -->
+    <div id="libraryViewPanel" class="view-panel space-y-5 hidden">
+      <!-- Search & Add Bar Only -->
+      <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-4">
+        <div class="flex-1 min-w-[260px] relative">
+          <input 
+            type="text" 
+            id="programSearchInput" 
+            placeholder="ابحث عن أي برنامج باسمه، بمقدمه، أو وصفه..." 
+            class="w-full pl-4 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold focus:ring-2 focus:ring-blue-500 focus:bg-white"
+          >
+          <span class="absolute right-3 top-3 text-slate-400">🔍</span>
+          <button id="clearProgramSearchBtn" type="button" title="مسح البحث" aria-label="مسح البحث" class="hidden absolute left-3 top-2.5 w-6 h-6 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200 text-sm">✕</button>
+        </div>
+
+        <button id="addNewProgramBtn" class="px-5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs sm:text-sm font-black shadow transition flex items-center gap-2">
+          <span>➕</span> إضافة برنامج جديد
+        </button>
+      </div>
+
+      <!-- Programs List Container -->
+      <div id="programsListContainer" class="w-full">
+        <!-- Rendered by UI -->
+      </div>
+    </div>
+
+    <!-- 3. ANALYTICS PANEL -->
+    <div id="analyticsViewPanel" class="view-panel hidden">
+      <div id="analyticsContainer">
+        <!-- Rendered by UI -->
+      </div>
+    </div>
+
+    <!-- 4. SETTINGS PANEL (PRESENTERS & CATEGORIES MANAGEMENT) -->
+    <div id="settingsViewPanel" class="view-panel hidden space-y-6">
+      <div id="settingsContainer">
+        <!-- Rendered by UI -->
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Container for interactive modals -->
+  <div id="modalContainer"></div>
+
+  <!-- Supabase Cloud SDK CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- Application Logic Scripts -->
+  <script src="js/data.js?v=20261015-1"></script>
+  <script src="js/state.js?v=20261015-1"></script>
+  <script src="js/autofill.js?v=20261015-1"></script>
+  <script src="js/export.js?v=20261015-1"></script>
+  <script src="js/supabase-client.js?v=20261015-1"></script>
+  <script src="js/ui.js?v=20261015-1"></script>
+  <script src="js/app.js?v=20261015-1"></script>
+  
+  <script>
+    // Set print date
+    document.getElementById('printDate').textContent = new Date().toLocaleDateString('ar-EG', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+  </script>
+</body>
+</html>
