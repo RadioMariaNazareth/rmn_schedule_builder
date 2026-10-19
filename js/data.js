@@ -27,26 +27,20 @@ const RMN_CATEGORIES = [
   { id: 'cate-10', alias: 'youth_family', name: 'شبيبة وعائلة', color: '#d97706', bgLight: '#fffbeb', border: '#fde68a', icon: 'users' }
 ];
 
-// 50 Curated, Distinct, High-Contrast Colors for Program Palette (No Duplicates Allowed)
-const RMN_50_COLORS = [
-  '#1d4ed8', '#0284c7', '#0d9488', '#059669', '#16a34a',
-  '#65a30d', '#ca8a04', '#d97706', '#ea580c', '#dc2626',
-  '#b91c1c', '#be123c', '#db2777', '#c026d3', '#9333ea',
-  '#7c3aed', '#4f46e5', '#2563eb', '#0891b2', '#047857',
-  '#15803d', '#854d0e', '#c2410c', '#991b1b', '#9d174d',
-  '#86198f', '#6d28d9', '#4338ca', '#1e40af', '#0369a1',
-  '#0f766e', '#166534', '#4d7c0f', '#a16207', '#9a3412',
-  '#881337', '#701a75', '#581c87', '#3730a3', '#1e3a8a',
-  '#155e75', '#115e59', '#14532d', '#3f6212', '#713f12',
-  '#7c2d12', '#475569', '#334155', '#e11d48', '#0e7490'
-  , '#3b82f6', '#06b6d4', '#14b8a6', '#22c55e', '#84cc16'
-  , '#eab308', '#f97316', '#f43f5e', '#ec4899', '#a855f7'
-  , '#6366f1', '#0ea5e9', '#2dd4bf', '#10b981', '#4ade80'
-  , '#a3e635', '#facc15', '#fb923c', '#fb7185', '#f472b6'
-  , '#c084fc', '#818cf8', '#38bdf8', '#5eead4', '#34d399'
-  , '#86efac', '#bef264', '#fde047', '#fdba74', '#fda4af'
-  , '#f9a8d4', '#d8b4fe', '#a5b4fc', '#7dd3fc', '#99f6e4'
+// 60 Curated, Distinct, High-Contrast Colors for Program Palette (Far From Each Other, No Duplicates)
+const RMN_60_COLORS = [
+  '#dc2626', '#1d4ed8', '#16a34a', '#ea580c', '#7c3aed', '#0d9488',
+  '#e11d48', '#2563eb', '#059669', '#d97706', '#9333ea', '#0891b2',
+  '#991b1b', '#1e40af', '#15803d', '#c05621', '#6d28d9', '#0f766e',
+  '#be123c', '#3b82f6', '#65a30d', '#ca8a04', '#c026d3', '#0284c7',
+  '#b91c1c', '#1e3a8a', '#14532d', '#b45309', '#581c87', '#115e59',
+  '#f43f5e', '#4f46e5', '#047857', '#a16207', '#a21caf', '#0e7490',
+  '#7f1d1d', '#3730a3', '#4d7c0f', '#854d0e', '#7e22ce', '#155e75',
+  '#881337', '#4338ca', '#065f46', '#78350f', '#701a75', '#0369a1',
+  '#9f1239', '#312e81', '#3f6212', '#9a3412', '#3b0764', '#075985',
+  '#c2410c', '#6366f1', '#22c55e', '#7c2d12', '#475569', '#0c4a6e'
 ];
+const RMN_50_COLORS = RMN_60_COLORS;
 
 const RMN_PROGRAM_LIBRARY_VERSION = 2;
 

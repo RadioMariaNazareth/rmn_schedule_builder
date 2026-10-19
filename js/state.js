@@ -12,6 +12,7 @@ class RMNStateManager {
     this.programs = this.loadPrograms();
     this.categories = this.loadCategories();
     this.customCategories = this.categories;
+    this.presenterObjects = this.loadPresenterObjects();
     this.presenters = this.loadPresenters();
 
     // Load or initialize schedule
@@ -22,7 +23,7 @@ class RMNStateManager {
     this.selectedDay = 'mon';
     this.selectedHour = 8;
     this.weeklyDensity = 'detailed';
-    this.timeZoomMinutes = 15;
+    this.timeZoomMinutes = 5;
     this.activeScheduleName = localStorage.getItem('rmn_active_schedule_name') || 'الجدول الحالي';
     this.searchQuery = '';
     this.filterCategory = 'all';
@@ -39,6 +40,18 @@ class RMNStateManager {
     const hours = Math.floor(totalMinutes / 60);
     const mins = totalMinutes % 60;
     return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+  }
+
+  loadPresenterObjects() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('rmn_presenter_objects') || '[]');
+      if (Array.isArray(saved) && saved.length > 0) {
+        return saved.filter(obj => obj && obj.name && obj.name !== 'Radio Maria Rome');
+      }
+      return [];
+    } catch {
+      return [];
+    }
   }
 
   loadPresenters() {
@@ -322,6 +335,14 @@ class RMNStateManager {
     }
     localStorage.setItem('rmn_presenters', JSON.stringify(this.presenters));
 
+    if (Array.isArray(this.presenterObjects)) {
+      const obj = this.presenterObjects.find(p => p && p.name && p.name.toLowerCase() === cleanOld.toLowerCase());
+      if (obj) {
+        obj.name = cleanNew;
+        localStorage.setItem('rmn_presenter_objects', JSON.stringify(this.presenterObjects));
+      }
+    }
+
     let programsUpdated = false;
     this.programs.forEach(prog => {
       if (prog.presenter && prog.presenter.toLowerCase() === cleanOld.toLowerCase()) {
@@ -344,6 +365,11 @@ class RMNStateManager {
     if (!cleanName) return false;
     this.presenters = this.presenters.filter(p => p.toLowerCase() !== cleanName.toLowerCase());
     localStorage.setItem('rmn_presenters', JSON.stringify(this.presenters));
+
+    if (Array.isArray(this.presenterObjects)) {
+      this.presenterObjects = this.presenterObjects.filter(p => !p || !p.name || p.name.toLowerCase() !== cleanName.toLowerCase());
+      localStorage.setItem('rmn_presenter_objects', JSON.stringify(this.presenterObjects));
+    }
 
     if (window.rmnSupabase) {
       await window.rmnSupabase.deletePresenter(cleanName);
@@ -521,6 +547,40 @@ class RMNStateManager {
     };
   }
 
+  // Get next sequential program ID (e.g. prog-40 if prog-39 is the highest in the database)
+  getNextProgramId() {
+    let maxNum = 0;
+    if (Array.isArray(this.programs)) {
+      this.programs.forEach(p => {
+        if (!p || !p.id) return;
+        const match = String(p.id).match(/(?:prog|rmn-program|program)[-_]?(\d+)$/i);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (Number.isFinite(num) && num < 1000000 && num > maxNum) {
+            maxNum = num;
+          }
+        }
+      });
+    }
+    if (typeof DEFAULT_PROGRAMS !== 'undefined' && Array.isArray(DEFAULT_PROGRAMS)) {
+      DEFAULT_PROGRAMS.forEach(p => {
+        if (!p || !p.id) return;
+        const match = String(p.id).match(/(?:prog|rmn-program|program)[-_]?(\d+)$/i);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (Number.isFinite(num) && num < 1000000 && num > maxNum) {
+            maxNum = num;
+          }
+        }
+      });
+    }
+    let candidate = maxNum + 1;
+    while (this.programs && this.programs.some(p => p.id === `prog-${candidate}`)) {
+      candidate++;
+    }
+    return `prog-${candidate}`;
+  }
+
   addProgram(programData) {
     if (this.programs.length >= RMN_50_COLORS.length) return null;
     // Determine distinct color
@@ -529,11 +589,13 @@ class RMNStateManager {
       progColor = this.getAvailableColor();
     }
 
+    const newProgId = programData.id || this.getNextProgramId();
+
     const newProg = {
-      id: 'prog-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+      id: newProgId,
       title: programData.title.trim(),
       categoryId: programData.categoryId || 'spiritual',
-      defaultDuration: this.normalizeDuration(programData.defaultDuration),
+      defaultDuration: this.normalizeDuration(programData.defaultDuration || 15),
       presenter: programData.presenter?.trim() || 'فريق الإذاعة',
       color: progColor,
       description: programData.description?.trim() || '',
@@ -573,7 +635,7 @@ class RMNStateManager {
 
   normalizeDuration(value) {
     const duration = Number.parseInt(value, 10);
-    const safeDuration = Number.isFinite(duration) ? duration : 30;
+    const safeDuration = Number.isFinite(duration) ? duration : 15;
     return Math.min(360, Math.max(this.slotMinutes, Math.round(safeDuration / this.slotMinutes) * this.slotMinutes));
   }
 

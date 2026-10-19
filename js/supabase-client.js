@@ -92,7 +92,7 @@ class RMNSupabaseManager {
       const { data, error } = await this.client
         .from(this.presentersTableName)
         .select('*')
-        .order('name', { ascending: true });
+        .order('id', { ascending: true });
 
       if (error) {
         console.warn('Could not query presenters table:', error.message);
@@ -101,15 +101,70 @@ class RMNSupabaseManager {
 
       if (data && data.length > 0) {
         // Load strictly from Supabase database
-        const cloudNames = data
-          .map(item => String(item.name || '').trim())
-          .filter(name => name && name !== 'Radio Maria Rome');
+        const cloudObjects = data
+          .filter(item => item && item.name && item.name !== 'Radio Maria Rome')
+          .map(item => ({
+            id: String(item.id || '').trim(),
+            name: String(item.name || '').trim()
+          }));
+
+        window.rmnState.presenterObjects = cloudObjects;
+        localStorage.setItem('rmn_presenter_objects', JSON.stringify(cloudObjects));
+
+        const cloudNames = cloudObjects.map(item => item.name);
         window.rmnState.presenters = cloudNames;
         localStorage.setItem('rmn_presenters', JSON.stringify(cloudNames));
       }
     } catch (e) {
       console.warn('syncPresenters error:', e);
     }
+  }
+
+  // Calculate next sequential presenter ID matching database structure (pres-00, pres-01, ..., pres-16)
+  async getNextPresenterId() {
+    let maxNum = -1;
+
+    // 1. Query Supabase directly if client available
+    if (this.client) {
+      try {
+        const { data, error } = await this.client
+          .from(this.presentersTableName)
+          .select('id');
+        if (!error && Array.isArray(data)) {
+          data.forEach(row => {
+            if (!row || !row.id) return;
+            const match = String(row.id).match(/^pres-(\d+)$/i);
+            if (match) {
+              const num = parseInt(match[1], 10);
+              // Ignore timestamps or huge numbers > 100000
+              if (Number.isFinite(num) && num < 100000 && num > maxNum) {
+                maxNum = num;
+              }
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('Could not query max presenter id from Supabase:', err);
+      }
+    }
+
+    // 2. Also check local presenterObjects in state if available
+    if (window.rmnState?.presenterObjects && Array.isArray(window.rmnState.presenterObjects)) {
+      window.rmnState.presenterObjects.forEach(item => {
+        if (!item || !item.id) return;
+        const match = String(item.id).match(/^pres-(\d+)$/i);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (Number.isFinite(num) && num < 100000 && num > maxNum) {
+            maxNum = num;
+          }
+        }
+      });
+    }
+
+    const nextNum = maxNum >= 0 ? maxNum + 1 : 0;
+    const formatted = nextNum < 10 ? `0${nextNum}` : String(nextNum);
+    return `pres-${formatted}`;
   }
 
   async addPresenter(name) {
@@ -133,8 +188,8 @@ class RMNSupabaseManager {
         return existing;
       }
 
-      // 2. Insert into presenters table (id and name only, no bio column)
-      const id = `pres-${Date.now().toString().slice(-6)}`;
+      // 2. Insert into presenters table following sequential structure (e.g. pres-16 after pres-15)
+      const id = await this.getNextPresenterId();
       const { data, error } = await this.client
         .from(this.presentersTableName)
         .insert({
@@ -150,12 +205,18 @@ class RMNSupabaseManager {
         return null;
       }
 
-      console.log('Presenter successfully saved to Supabase:', data);
+      console.log('Presenter successfully saved to Supabase with ID:', id, data);
       if (!window.rmnState.presenters.includes(cleanName)) {
         window.rmnState.presenters.push(cleanName);
         localStorage.setItem('rmn_presenters', JSON.stringify(window.rmnState.presenters));
       }
-      if (window.rmnUI) window.rmnUI.showToast(`تم حفظ المذيع "${cleanName}" في جدول presenters السحابي ✅`, 'success');
+      if (!window.rmnState.presenterObjects) {
+        window.rmnState.presenterObjects = [];
+      }
+      window.rmnState.presenterObjects.push({ id, name: cleanName });
+      localStorage.setItem('rmn_presenter_objects', JSON.stringify(window.rmnState.presenterObjects));
+
+      if (window.rmnUI) window.rmnUI.showToast(`تم حفظ المذيع "${cleanName}" بالمعرّف ${id} في السحابة ✅`, 'success');
       return data;
     } catch (e) {
       console.error('addPresenter error:', e);
@@ -176,6 +237,16 @@ class RMNSupabaseManager {
         .update({ presenter: newName.trim(), updated_at: new Date().toISOString() })
         .eq('presenter', oldName.trim());
 
+      if (window.rmnState?.presenterObjects) {
+        const found = window.rmnState.presenterObjects.find(
+          p => p && p.name && p.name.toLowerCase() === oldName.trim().toLowerCase()
+        );
+        if (found) {
+          found.name = newName.trim();
+          localStorage.setItem('rmn_presenter_objects', JSON.stringify(window.rmnState.presenterObjects));
+        }
+      }
+
       console.log(`Presenter updated in Supabase: "${oldName}" -> "${newName}"`);
     } catch (e) {
       console.error('updatePresenter error:', e);
@@ -189,6 +260,13 @@ class RMNSupabaseManager {
         .from(this.presentersTableName)
         .delete()
         .eq('name', name.trim());
+
+      if (window.rmnState?.presenterObjects) {
+        window.rmnState.presenterObjects = window.rmnState.presenterObjects.filter(
+          p => p && p.name && p.name.toLowerCase() !== name.trim().toLowerCase()
+        );
+        localStorage.setItem('rmn_presenter_objects', JSON.stringify(window.rmnState.presenterObjects));
+      }
 
       console.log(`Presenter deleted from Supabase: "${name}"`);
     } catch (e) {

@@ -297,18 +297,19 @@ class RMNUIController {
       targetScrollLeft = existingScrollEl.scrollLeft;
     }
 
-    const zoomMinutes = window.rmnState.timeZoomMinutes || 15;
+    const zoomMinutes = window.rmnState.timeZoomMinutes || 5;
 
     // Zoom configurations for row heights (24 hours)
-    // 5 -> 12 slots/hr (192px), 10 -> 6 slots/hr (120px), 15 -> 4 slots/hr (96px), 30 -> 2 slots/hr (72px), 60 -> 1 slot/hr (60px)
+    // 5 -> 12 slots/hr (360px -> 30px per 5-min slot so 5-min programs appear clearly)
+    // 10 -> 6 slots/hr (180px -> 30px/slot), 15 -> 4 slots/hr (120px -> 30px/slot), 30 -> 2 slots/hr (80px -> 40px/slot), 60 -> 1 slot/hr (64px)
     const hourHeights = {
-      5: 192,
-      10: 120,
-      15: 96,
-      30: 72,
-      60: 60
+      5: 360,
+      10: 180,
+      15: 120,
+      30: 80,
+      60: 64
     };
-    const hourHeight = hourHeights[zoomMinutes] || 96;
+    const hourHeight = hourHeights[zoomMinutes] || 360;
     const totalDayHeight = 24 * hourHeight;
     const totalSlots = window.rmnState.totalSlotsPerDay; // 288 slots
 
@@ -335,7 +336,7 @@ class RMNUIController {
     const todayId = jsDayMap[now.getDay()];
 
     const timeColWidth = '46px';
-    const dayColMinWidth = days.length === 1 ? '320px' : '170px';
+    const dayColMinWidth = days.length === 1 ? '340px' : (zoomMinutes === 5 ? '225px' : (zoomMinutes === 10 ? '195px' : '175px'));
     const columnTemplate = days.map(() => `${timeColWidth} minmax(${dayColMinWidth}, 1fr)`).join(' ');
 
     // Generate Time Gutter Column with slots and minutes matching zoomMinutes
@@ -441,10 +442,11 @@ class RMNUIController {
                   const time = window.rmnState.formatTimeRange(block.startSlot, block.count);
                   const top = (block.startSlot / totalSlots) * totalDayHeight;
                   const height = Math.max(26, ((block.count / totalSlots) * totalDayHeight) - 2);
+                  const isCompact = height <= 32;
 
                   return `
                     <div 
-                      class="calendar-event-div"
+                      class="calendar-event-div ${isCompact ? 'is-compact' : ''}"
                       draggable="true"
                       data-day="${day.id}"
                       data-start-slot="${block.startSlot}"
@@ -452,6 +454,10 @@ class RMNUIController {
                       onmouseenter="window.rmnUI.setHoveredBlock('${day.id}', ${block.startSlot}, ${block.count})"
                       onmouseleave="window.rmnUI.clearHoveredBlock()"
                       ondragstart="window.rmnUI.startProgramDrag(event, '${day.id}', ${block.startSlot})"
+                      ondragend="window.rmnUI.endProgramDrag(event)"
+                      ondragover="window.rmnUI.allowProgramDrop(event)"
+                      ondragleave="window.rmnUI.clearProgramDropTarget(event)"
+                      ondrop="window.rmnUI.copyProgramDrop(event, '${day.id}', ${block.startSlot})"
                       onclick="window.rmnUI.editProgramAtSlot('${day.id}', ${block.startSlot})"
                       title="${program.title} (${time.startStr} - ${time.endStr})"
                     >
@@ -525,13 +531,23 @@ class RMNUIController {
     this.draggedScheduleBlock = { dayId, ...block };
     event.dataTransfer.effectAllowed = 'copyMove';
     event.dataTransfer.setData('text/plain', JSON.stringify(this.draggedScheduleBlock));
+    if (event.currentTarget) {
+      event.currentTarget.classList.add('is-dragging');
+    }
+  }
+
+  endProgramDrag(event) {
+    document.querySelectorAll('.is-dragging').forEach(el => el.classList.remove('is-dragging'));
+    document.querySelectorAll('.calendar-drop-zone-active').forEach(el => el.classList.remove('calendar-drop-zone-active'));
   }
 
   allowProgramDrop(event) {
     event.preventDefault();
     event.dataTransfer.dropEffect = event.ctrlKey ? 'copy' : 'move';
     const target = event.currentTarget;
-    if (target) target.classList.add('calendar-drop-zone-active');
+    if (target && !target.classList.contains('calendar-drop-zone-active')) {
+      target.classList.add('calendar-drop-zone-active');
+    }
   }
 
   clearProgramDropTarget(event) {
@@ -543,6 +559,7 @@ class RMNUIController {
     event.preventDefault();
     event.stopPropagation();
     document.querySelectorAll('.calendar-drop-zone-active').forEach(el => el.classList.remove('calendar-drop-zone-active'));
+    document.querySelectorAll('.is-dragging').forEach(el => el.classList.remove('is-dragging'));
     
     // Capture current scroll positions so page does not jump
     this.captureCurrentScroll();
@@ -551,27 +568,34 @@ class RMNUIController {
     if (!block) {
       try { block = JSON.parse(event.dataTransfer.getData('text/plain')); } catch { return; }
     }
-    if (!block?.programId || targetStartSlot + block.count > window.rmnState.totalSlotsPerDay) return;
+    if (!block?.programId) return;
     
-    const copyMode = event.ctrlKey;
-    if (!copyMode && block.dayId === targetDayId && targetStartSlot === block.startSlot) return;
+    const safeTargetSlot = Math.max(0, Math.min(targetStartSlot, window.rmnState.totalSlotsPerDay - block.count));
+    const copyMode = Boolean(event.ctrlKey);
+
+    if (!copyMode && block.dayId === targetDayId && safeTargetSlot === block.startSlot) {
+      this.draggedScheduleBlock = null;
+      return;
+    }
 
     if (copyMode) {
-      window.rmnState.setSlotRange(targetDayId, targetStartSlot, block.count, block.programId, block.note || '', block.isLive, block.isRepeat);
+      window.rmnState.setSlotRange(targetDayId, safeTargetSlot, block.count, block.programId, block.note || '', block.isLive, block.isRepeat);
     } else {
       window.rmnState.pushHistory();
       for (let slot = block.startSlot; slot < block.startSlot + block.count; slot++) {
         window.rmnState.schedule[block.dayId][slot] = { slotIndex: slot, programId: null, note: '', isLive: false, isRepeat: false };
       }
-      for (let slot = targetStartSlot; slot < targetStartSlot + block.count; slot++) {
+      for (let slot = safeTargetSlot; slot < safeTargetSlot + block.count; slot++) {
         window.rmnState.schedule[targetDayId][slot] = { slotIndex: slot, programId: block.programId, note: block.note || '', isLive: Boolean(block.isLive), isRepeat: Boolean(block.isRepeat) };
       }
       window.rmnState.saveSchedule();
     }
     this.draggedScheduleBlock = null;
-    this.refreshAll();
-    this.restoreCurrentScroll();
-    this.showToast(copyMode ? 'تم نسخ البرنامج إلى الموعد الجديد.' : 'تم نقل البرنامج إلى الموعد الجديد.', 'success');
+
+    requestAnimationFrame(() => {
+      this.refreshAll();
+      this.showToast(copyMode ? 'تم نسخ البرنامج (تكرار بـ Ctrl) بنجاح ✨' : 'تم نقل البرنامج إلى الموعد الجديد بنجاح ✨', 'success');
+    });
   }
 
   dropProgramOnDayColumn(event, targetDayId, totalDayHeight) {
@@ -832,7 +856,7 @@ class RMNUIController {
     const modalContainer = document.getElementById('modalContainer');
     modalContainer.innerHTML = `
       <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 modal-backdrop" onclick="if (event.target === this) window.rmnUI.closeModal()">
-        <div class="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden transform transition-all animate-in fade-in" onclick="event.stopPropagation()">
+        <div class="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden transform transition-all animate-in fade-in modal-content" data-modal-card="true" onclick="event.stopPropagation()">
           <!-- Header -->
           <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
             <div class="flex items-center gap-2.5">
@@ -1288,8 +1312,8 @@ class RMNUIController {
     const modalContainer = document.getElementById('modalContainer');
 
     modalContainer.innerHTML = `
-      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-        <div class="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 p-6 space-y-5 animate-in fade-in">
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 modal-backdrop" onclick="if (event.target === this) window.rmnUI.closeModal()">
+        <div class="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 p-6 space-y-5 animate-in fade-in modal-content" data-modal-card="true" onclick="event.stopPropagation()">
           <div class="flex items-center justify-between pb-3 border-b border-slate-200">
             <h3 class="font-extrabold text-slate-800 text-base">نسخ جدول يوم (${sourceDay.nameAr}) كامل</h3>
             <button onclick="window.rmnUI.closeModal()" class="text-slate-400 hover:text-slate-600 text-lg font-bold">✕</button>
@@ -1341,11 +1365,11 @@ class RMNUIController {
   openFillGapsModal() {
     const modalContainer = document.getElementById('modalContainer');
     modalContainer.innerHTML = `
-      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-        <div class="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in">
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 modal-backdrop" onclick="if (event.target === this) window.rmnUI.closeModal()">
+        <div class="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in modal-content" data-modal-card="true" onclick="event.stopPropagation()">
           <div class="flex items-center justify-between pb-3 border-b border-slate-200">
             <h3 class="font-extrabold text-slate-800 text-base">🪄 التعبئة التلقائية للفترات الشاغرة</h3>
-            <button onclick="window.rmnUI.closeModal()" class="text-slate-400 hover:text-slate-600 text-lg font-bold">✕</button>
+            <button type="button" onclick="window.rmnUI.closeModal()" class="text-slate-400 hover:text-slate-600 text-lg font-bold cursor-pointer">✕</button>
           </div>
 
           <div>
@@ -1359,8 +1383,8 @@ class RMNUIController {
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1">اختر برنامج لملء الفراغات به:</label>
             <select id="gapFillerProgSelect" class="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-semibold text-slate-800">
-              ${window.rmnState.programs.map(p => `
-                <option value="${p.id}" ${p.id === 'prog-marian-hymns' ? 'selected' : ''}>
+              ${window.rmnState.programs.map((p, idx) => `
+                <option value="${p.id}" ${idx === 0 || p.categoryId === 'hymns' || p.categoryId === 'jingles' ? 'selected' : ''}>
                   ${p.title}
                 </option>
               `).join('')}
@@ -1368,8 +1392,8 @@ class RMNUIController {
           </div>
 
           <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
-            <button onclick="window.rmnUI.closeModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold">إلغاء</button>
-            <button onclick="window.rmnUI.executeFillGaps()" class="px-5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-bold shadow">بدء التعبئة</button>
+            <button type="button" onclick="window.rmnUI.closeModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold cursor-pointer">إلغاء</button>
+            <button type="button" onclick="window.rmnUI.executeFillGaps()" class="px-5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-bold shadow cursor-pointer">بدء التعبئة</button>
           </div>
         </div>
       </div>
@@ -1392,8 +1416,8 @@ class RMNUIController {
     const [defH, defM] = defaultTimeStr.split(':').map(Number);
 
     modalContainer.innerHTML = `
-      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-        <div class="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden transform transition-all animate-in fade-in">
+      <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 modal-backdrop" onclick="if (event.target === this) window.rmnUI.closeModal()">
+        <div class="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden transform transition-all animate-in fade-in modal-content" data-modal-card="true" onclick="event.stopPropagation()">
           <!-- Header -->
           <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
             <div class="flex items-center gap-2.5">
@@ -1582,12 +1606,12 @@ class RMNUIController {
 
     modalContainer.innerHTML = `
       <div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 modal-backdrop" onclick="if (event.target === this) window.rmnUI.closeModal()">
-        <div class="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in max-h-[92vh] overflow-y-auto" onclick="event.stopPropagation()">
+        <div class="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in max-h-[92vh] overflow-y-auto modal-content" data-modal-card="true" onclick="event.stopPropagation()">
           <!-- Header -->
           <div class="flex items-center justify-between pb-3 border-b border-slate-200">
             <div>
               <h3 class="font-extrabold text-slate-800 text-base">${isEdit ? 'تعديل بيانات برنامج' : 'إضافة برنامج جديد للمكتبة'}</h3>
-              <p class="text-xs text-slate-500">اختر من بين 50 لوناً مميزاً لمنع تكرار الألوان</p>
+              <p class="text-xs text-slate-500">اختر من بين 60 لوناً مميزاً لمنع تكرار الألوان</p>
             </div>
             <button onclick="window.rmnUI.closeModal()" class="text-slate-400 hover:text-slate-600 text-lg font-bold">✕</button>
           </div>
@@ -1610,29 +1634,54 @@ class RMNUIController {
               </div>
               <div>
                 <label class="block text-xs font-bold text-slate-700 mb-1">المدة القياسية (بالدقائق):</label>
-                <input type="number" id="progDurationInput" step="5" min="5" max="360" value="${isEdit ? existingProg.defaultDuration : 30}" class="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800">
+                <input type="number" id="progDurationInput" step="5" min="5" max="360" value="${isEdit ? existingProg.defaultDuration : 15}" class="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800">
               </div>
             </div>
 
-            <div>
-              <label class="block text-xs font-bold text-slate-700 mb-1">المقدّم أو المسؤول:</label>
-              <select id="progPresenterInput" class="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800">
-                ${window.rmnState.getPresenters().filter(p => p && p !== 'Radio Maria Rome').map(presenter => `<option value="${presenter}" ${isEdit && existingProg.presenter === presenter ? 'selected' : ''}>${presenter}</option>`).join('')}
-                <option value="__add_presenter__">＋ إضافة مقدّم جديد</option>
-              </select>
+            <!-- Searchable Presenter Dropdown Component (Type & Choose from Dropdown with Substring Search) -->
+            <div class="relative" id="presenterComboboxContainer">
+              <div class="flex items-center justify-between mb-1">
+                <label class="block text-xs font-bold text-slate-700">المقدّم أو المسؤول: <span class="text-slate-400 font-normal text-[11px]">(ابحث بالاسم أو اختر من القائمة)</span></label>
+                <button type="button" id="quickAddPresenterBtn" class="text-[11px] text-blue-600 hover:text-blue-800 font-bold hover:underline cursor-pointer">＋ مقدّم جديد</button>
+              </div>
+              <div class="relative flex items-center">
+                <input 
+                  type="text" 
+                  id="progPresenterSearchInput" 
+                  autocomplete="off" 
+                  placeholder="ابحث بالاسم (أي جزء من الاسم) أو اختر..." 
+                  value="${isEdit ? (existingProg.presenter || '') : (window.rmnState.getPresenters().filter(p => p && p !== 'Radio Maria Rome')[0] || 'فريق الإذاعة')}" 
+                  class="w-full p-2.5 pl-8 pr-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition"
+                />
+                <button 
+                  type="button" 
+                  id="togglePresenterDropdownBtn" 
+                  class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-xs p-1 cursor-pointer"
+                  tabindex="-1"
+                  title="فتح / إغلاق القائمة"
+                >▼</button>
+              </div>
+              <input type="hidden" id="progPresenterInput" value="${isEdit ? (existingProg.presenter || '') : (window.rmnState.getPresenters().filter(p => p && p !== 'Radio Maria Rome')[0] || 'فريق الإذاعة')}" />
+
+              <!-- Floating Dropdown list with substring filter -->
+              <div 
+                id="presenterDropdownMenu" 
+                class="hidden absolute z-50 left-0 right-0 mt-1 max-h-52 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl p-1 text-xs space-y-0.5"
+                onclick="event.stopPropagation()"
+              ></div>
             </div>
 
-            <!-- 90 Color Swatches Grid -->
+            <!-- 60 Color Swatches Grid -->
             <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200">
               <div class="flex items-center justify-between mb-2">
                 <label class="block text-xs font-bold text-slate-800">
-                  🎨 اختر لوناً فريداً من باليت الـ 90 لوناً:
+                  🎨 اختر لوناً فريداً من باليت الـ 60 لوناً:
                 </label>
                 <span id="selectedColorBadge" class="text-xs font-mono font-bold px-2 py-0.5 rounded text-white" style="background-color: ${selectedColor}">
                   ${selectedColor}
                 </span>
               </div>
-              <p class="text-[11px] text-slate-500 mb-3">الألوان المقفلة 🔒 مستخدمة لبرامج أخرى. كل صفحة تعرض 30 لوناً.</p>
+              <p class="text-[11px] text-slate-500 mb-3">الألوان المقفلة 🔒 مستخدمة لبرامج أخرى. صفحتان (30 لوناً في كل صفحة).</p>
 
               <div class="grid grid-cols-10 gap-2" id="colorSwatchesContainer"></div>
               <div class="flex items-center justify-between mt-3">
@@ -1673,28 +1722,135 @@ class RMNUIController {
       categorySelect.value = category.id;
     });
 
-    const presenterSelect = document.getElementById('progPresenterInput');
-    presenterSelect?.addEventListener('change', async () => {
-      if (presenterSelect.value !== '__add_presenter__') return;
-      const inputVal = prompt('اسم المقدّم أو المسؤول الجديد:');
-      if (!inputVal || !inputVal.trim()) {
-        presenterSelect.value = isEdit ? existingProg.presenter : (window.rmnState.getPresenters()[0] || '');
-        return;
+    // --- Searchable Presenter Combobox Logic ---
+    const searchInput = document.getElementById('progPresenterSearchInput');
+    const hiddenInput = document.getElementById('progPresenterInput');
+    const dropdownMenu = document.getElementById('presenterDropdownMenu');
+    const toggleBtn = document.getElementById('togglePresenterDropdownBtn');
+    const quickAddBtn = document.getElementById('quickAddPresenterBtn');
+
+    const getAvailablePresenters = () => {
+      const all = window.rmnState.getPresenters().filter(p => p && p !== 'Radio Maria Rome');
+      return all.length > 0 ? all : ['فريق الإذاعة', 'عائلة راديو مريم'];
+    };
+
+    const renderPresenterOptions = (filterQuery = '') => {
+      const all = getAvailablePresenters();
+      const q = (filterQuery || '').trim().toLowerCase();
+      // Substring match: not necessarily the first letter!
+      const matches = q ? all.filter(p => p.toLowerCase().includes(q)) : all;
+
+      if (matches.length === 0) {
+        dropdownMenu.innerHTML = `
+          <div class="p-3 text-center text-slate-400 text-xs">لا يوجد مقدّم يطابق "${filterQuery.trim()}"</div>
+          <button type="button" id="addNewPresenterFromSearchBtn" class="w-full text-right p-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-between cursor-pointer border border-blue-200">
+            <span>＋ إضافة "${filterQuery.trim()}" كمقدّم جديد في السحابة</span>
+          </button>
+        `;
+        document.getElementById('addNewPresenterFromSearchBtn')?.addEventListener('click', async () => {
+          const newName = filterQuery.trim();
+          if (newName) {
+            await window.rmnState.addPresenter(newName);
+            selectPresenter(newName);
+          }
+        });
+      } else {
+        dropdownMenu.innerHTML = matches.map(p => {
+          const isSelected = p.toLowerCase() === (hiddenInput.value || '').trim().toLowerCase();
+          let labelHtml = p;
+          if (q) {
+            const safeQ = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            labelHtml = p.replace(new RegExp(`(${safeQ})`, 'gi'), '<mark class="bg-amber-200 text-amber-900 rounded-xs px-0.5">$1</mark>');
+          }
+          return `
+            <div 
+              class="presenter-dropdown-item flex items-center justify-between p-2 rounded-lg cursor-pointer transition ${isSelected ? 'bg-blue-600 text-white font-bold' : 'hover:bg-slate-100 text-slate-800'}"
+              data-presenter="${p.replace(/"/g, '&quot;')}"
+            >
+              <span>${labelHtml}</span>
+              ${isSelected ? '<span class="text-xs">✓</span>' : ''}
+            </div>
+          `;
+        }).join('') + `
+          <div class="pt-1 mt-1 border-t border-slate-100">
+            <button type="button" id="addNewPresenterOptionBtn" class="w-full text-right p-2 rounded-lg hover:bg-blue-50 text-blue-600 font-bold text-xs flex items-center gap-1.5 cursor-pointer">
+              <span>＋ إضافة مقدّم جديد إلى القائمة...</span>
+            </button>
+          </div>
+        `;
+
+        dropdownMenu.querySelectorAll('.presenter-dropdown-item').forEach(item => {
+          item.addEventListener('click', () => {
+            selectPresenter(item.getAttribute('data-presenter'));
+          });
+        });
+
+        document.getElementById('addNewPresenterOptionBtn')?.addEventListener('click', async () => {
+          const inputVal = prompt('اسم المقدّم أو المسؤول الجديد:');
+          if (inputVal && inputVal.trim()) {
+            await window.rmnState.addPresenter(inputVal.trim());
+            selectPresenter(inputVal.trim());
+          }
+        });
       }
-      const presenter = await window.rmnState.addPresenter(inputVal.trim());
-      if (!presenter) {
-        presenterSelect.value = isEdit ? existingProg.presenter : (window.rmnState.getPresenters()[0] || '');
-        return;
-      }
-      let option = Array.from(presenterSelect.options).find(opt => opt.value === presenter);
-      if (!option) {
-        option = document.createElement('option');
-        option.value = presenter;
-        option.textContent = presenter;
-        presenterSelect.insertBefore(option, presenterSelect.lastElementChild);
-      }
-      presenterSelect.value = presenter;
+      dropdownMenu.classList.remove('hidden');
+    };
+
+    const selectPresenter = (name) => {
+      hiddenInput.value = name;
+      searchInput.value = name;
+      dropdownMenu.classList.add('hidden');
+    };
+
+    searchInput?.addEventListener('focus', () => {
+      renderPresenterOptions(searchInput.value);
     });
+
+    searchInput?.addEventListener('input', () => {
+      renderPresenterOptions(searchInput.value);
+    });
+
+    searchInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const firstItem = dropdownMenu.querySelector('.presenter-dropdown-item');
+        if (firstItem) firstItem.click();
+      } else if (e.key === 'Escape') {
+        dropdownMenu.classList.add('hidden');
+      }
+    });
+
+    toggleBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (dropdownMenu.classList.contains('hidden')) {
+        renderPresenterOptions('');
+        searchInput.focus();
+      } else {
+        dropdownMenu.classList.add('hidden');
+      }
+    });
+
+    quickAddBtn?.addEventListener('click', async () => {
+      const inputVal = prompt('اسم المقدّم أو المسؤول الجديد:');
+      if (inputVal && inputVal.trim()) {
+        await window.rmnState.addPresenter(inputVal.trim());
+        selectPresenter(inputVal.trim());
+      }
+    });
+
+    const onDocClick = (e) => {
+      if (!document.getElementById('presenterComboboxContainer')) {
+        document.removeEventListener('click', onDocClick);
+        return;
+      }
+      if (!e.target.closest('#presenterComboboxContainer')) {
+        dropdownMenu.classList.add('hidden');
+        if (hiddenInput.value) {
+          searchInput.value = hiddenInput.value;
+        }
+      }
+    };
+    document.addEventListener('click', onDocClick);
 
     modalContainer.querySelectorAll('input:not([type="checkbox"]), select').forEach(input => input.addEventListener('keydown', event => {
       if (event.key === 'Enter') {
@@ -1766,8 +1922,8 @@ class RMNUIController {
     }
 
     const categoryId = document.getElementById('progCategorySelect').value;
-    const defaultDuration = parseInt(document.getElementById('progDurationInput').value, 10) || 30;
-    const presenter = document.getElementById('progPresenterInput').value.trim();
+    const defaultDuration = parseInt(document.getElementById('progDurationInput').value, 10) || 15;
+    const presenter = (document.getElementById('progPresenterInput')?.value || document.getElementById('progPresenterSearchInput')?.value || '').trim();
     if (presenter && presenter !== '__add_presenter__') {
       await window.rmnState.addPresenter(presenter);
     }
@@ -1794,7 +1950,7 @@ class RMNUIController {
         description
       });
       if (!newProgram) {
-        this.showToast('تم استخدام الألوان الخمسين جميعها. احذف برنامجاً أو عدّل برنامجاً قائماً أولاً.', 'error');
+        this.showToast('تم استخدام جميع الألوان الستين. احذف برنامجاً أو عدّل برنامجاً قائماً أولاً.', 'error');
         return;
       }
       this.showToast('تمت إضافة البرنامج الجديد بنجاح', 'success');
